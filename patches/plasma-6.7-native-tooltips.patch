@@ -1,8 +1,30 @@
 diff --git a/applets/systemtray/qml/ExpandedRepresentation.qml b/applets/systemtray/qml/ExpandedRepresentation.qml
 --- a/applets/systemtray/qml/ExpandedRepresentation.qml
 +++ b/applets/systemtray/qml/ExpandedRepresentation.qml
-@@ -242,7 +242,10 @@ Item {
+@@ -242,8 +242,11 @@ Item {
                  KeyNavigation.left: actionsButton.visible ? actionsButton : actionsButton.KeyNavigation.left
                  KeyNavigation.right: pinButton
  
 -                PlasmaComponents.ToolTip {
+-                    text: parent.visible ? parent.text : ""
++                PlasmaCore.ToolTipArea {
++                    anchors.fill: parent
++                    active: parent.hovered
++                    mainText: parent.visible ? parent.text : ""
++                    subText: ""
+                 }
+                 onClicked: actionsButton.applet.plasmoid.internalAction("configure").trigger();
+             }
+@@ -262,7 +265,10 @@ Item {
+                 KeyNavigation.left: configureButton.visible ? configureButton : configureButton.KeyNavigation.left
+                 KeyNavigation.tab: hiddenItemsView.visible ? hiddenItemsView.layout : container.currentItem?.nextItemInFocusChain() ?? null
+ 
+-                PlasmaComponents.ToolTip {
+-                    text: parent.text
++                PlasmaCore.ToolTipArea {
++                    anchors.fill: parent
++                    active: parent.hovered
++                    mainText: parent.text
++                    subText: ""
+                 }
+             }
