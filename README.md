@@ -1,89 +1,78 @@
 # Plasma Windows-Style System Tray Mod
 
+A KDE Plasma System Tray modification that adds a Windows-style tray overflow workflow while preserving normal Plasma applet behavior.
 
 ## Project status
 
-**Release:** 1.0.0
-**Target:** KDE Plasma 6.7.x
-**Status:** Tested and working on the pinned Plasma Workspace base commit.
+**Release:** 1.0.0  
+**Target:** KDE Plasma 6.7.x  
+**Tested:** KDE Plasma 6.7.4
 
-This is an unofficial patch, not an upstream KDE feature. Plasma internals may
-change between releases, so compatibility with newer Plasma versions is not
-guaranteed.
+The installer has been tested end-to-end on Plasma 6.7.4: clean upstream source checkout, patching, compilation, installation, Plasma restart, and verification.
 
+This is an unofficial patch, not an upstream KDE feature. Plasma internals can change between releases, so compatibility with newer Plasma versions is not guaranteed.
 
-A KDE Plasma System Tray modification that adds a more Windows-like overflow
-workflow while preserving Plasma applet behavior.
+## What it does
 
-## Features
+The normal Plasma System Tray popup keeps its built-in Plasma controls at the top and adds a compact application-icon overflow area underneath. Application tray icons can be moved between the panel and overflow area in a workflow similar to Windows.
 
 - Drag application tray icons from the panel into the overflow popup.
-- Drag them back onto the panel at the intended position.
+- Drag hidden application icons back onto the panel.
 - Reorder visible tray icons.
-- Reorder icons inside the popup.
-- Reorder built-in Plasma applets in the popup.
-- Persist ordering across Plasma restarts.
-- Preserve normal click, activation, context-menu, and applet behavior.
+- Reorder icons inside the overflow area.
+- Preserve the original Plasma controls in the popup.
+- Automatically grow the compact overflow area as additional rows are needed.
+- Persist tray ordering across Plasma restarts.
+- Preserve normal clicks, activation, context menus, and applet behavior.
+- Use Plasma's native theme-aware tooltips for the popup header controls.
 
-## Tested base
+## Quick install — Plasma 6.7.x
 
-This release was built from Plasma Workspace commit:
-
-`668b662b8baafd18d9a544b58d1ccc359c04cb8e`
-
-The patch is intended for Plasma 6.7-era source. Internal Plasma APIs change,
-so future releases may require rebasing.
-
-## Repository contents
-
-- `patches/plasma-6.7-systemtray.patch` — final tested patch
-- `scripts/install.sh` — clone/build/install the patched System Tray
-- `scripts/restore.sh` — restore the System Tray plugin backup created by install
-- `scripts/rebuild-after-plasma-update.sh` — compatibility build helper
-- `docs/COMPATIBILITY.md` — compatibility notes
-- `docs/DEVELOPMENT-NOTES.md` — implementation notes
-- `docs/LICENSE-AUDIT.md` — SPDX audit of modified upstream files
-
-## Before installing
-
-Review the patch and run the non-destructive release checks:
+Copy and paste this into a terminal:
 
 ```bash
-./scripts/check-release.sh
+git clone https://github.com/Konattchi/plasma-windows-tray.git
+cd plasma-windows-tray
 ./scripts/install.sh --dry-run
+./scripts/install.sh
+./scripts/verify.sh
 ```
 
-The installer creates an immutable stock-plugin backup on first install.
+A successful verification ends with:
 
-## Install
-
-First run a non-destructive check:
-
-```bash
-./scripts/install.sh --dry-run
+```text
+State: MOD INSTALLED
 ```
 
-The installer refuses automatic installation when the detected Plasma series is
-not 6.7.x unless `--force-version` is supplied.
+The installer will ask for `sudo` only when it needs to replace the system System Tray plugin. Source and build files are kept outside the repository under `~/.cache/plasma-windows-tray`, while persistent restore state is stored under `~/.local/state/plasma-windows-tray`.
 
-On first installation it creates an immutable restore backup and will not
-overwrite that backup automatically.
+### Already running a manually installed copy?
 
-If the machine is already running this mod and you have a known stock plugin
-binary, seed the restore backup explicitly:
+If this mod was previously installed manually, do **not** let the installer mistake the modified plugin for the original stock plugin. If you have a known-good stock System Tray plugin backup, seed it explicitly on the first managed installation:
 
 ```bash
 ./scripts/install.sh --backup-from /path/to/stock/org.kde.plasma.systemtray.so
 ```
 
-Then verify the managed state:
+## Safety checks
+
+The dry run is non-destructive:
 
 ```bash
-./scripts/verify.sh
+./scripts/install.sh --dry-run
 ```
 
-## Restore
+You can also run the repository release checks:
 
+```bash
+./scripts/check-release.sh
+```
+
+The installer refuses automatic installation when the detected Plasma series is not 6.7.x unless `--force-version` is explicitly supplied.
+
+On first managed installation it creates an immutable restore backup and does not overwrite that backup automatically.
+
+## Restore stock Plasma tray
 
 ```bash
 ./scripts/restore.sh
@@ -92,35 +81,39 @@ Then verify the managed state:
 
 ## Plasma updates
 
-A Plasma update can replace the patched plugin. To check whether the patch
-still applies to another Plasma Workspace source tree:
+A Plasma package update can replace the modified System Tray plugin. The repository includes a compatibility helper for testing the patches against another Plasma Workspace source tree:
 
 ```bash
 ./scripts/rebuild-after-plasma-update.sh /path/to/plasma-workspace
 ```
 
-That helper builds but does not automatically install the result.
+The helper performs a compatibility build but does not automatically install the result.
+
+## Repository contents
+
+- `patches/plasma-6.7-systemtray.patch` — Windows-style tray behavior and overflow UI.
+- `patches/plasma-6.7-native-tooltips.patch` — native Plasma tooltip behavior for the popup header controls.
+- `scripts/install.sh` — checks, downloads matching Plasma source, patches, builds, backs up, installs, and restarts Plasma.
+- `scripts/verify.sh` — verifies whether the installed plugin matches the managed mod or backup.
+- `scripts/restore.sh` — restores the System Tray plugin backup created by the installer.
+- `scripts/rebuild-after-plasma-update.sh` — compatibility build helper.
+- `docs/COMPATIBILITY.md` — compatibility notes.
+- `docs/DEVELOPMENT-NOTES.md` — implementation notes.
+- `docs/LICENSE-AUDIT.md` — SPDX audit of modified upstream files.
 
 ## Important
 
-This is an unofficial modification of KDE Plasma Workspace. It is not an
-official KDE product or supported KDE configuration.
+This is an unofficial modification of KDE Plasma Workspace. It is not an official KDE product, supported KDE configuration, or endorsed by KDE.
 
-The patch modifies upstream KDE files and retains their existing SPDX license
-headers. See `docs/LICENSE-AUDIT.md`.
+The patch modifies upstream KDE files and retains their existing SPDX license headers. See `docs/LICENSE-AUDIT.md`.
 
 ## Licensing
 
-Original scripts and documentation created for this project are licensed under
-`GPL-2.0-or-later` unless stated otherwise.
+Original scripts and documentation created for this project are licensed under `GPL-2.0-or-later` unless stated otherwise.
 
-The included patch modifies KDE Plasma Workspace files. Those files retain
-their respective upstream `GPL-2.0-or-later` or `LGPL-2.0-or-later` licensing
-terms and copyright notices. See `LICENSE` and `docs/LICENSE-AUDIT.md` for
-details.
+The included patches modify KDE Plasma Workspace files. Those files retain their respective upstream `GPL-2.0-or-later` or `LGPL-2.0-or-later` licensing terms and copyright notices. See `LICENSE` and `docs/LICENSE-AUDIT.md` for details.
 
-This project is an independent, unofficial modification of KDE Plasma
-Workspace. It is not an official KDE project and is not endorsed by KDE.
+---
 
 P.S.
 Yes I understand no coding whatsoever.
