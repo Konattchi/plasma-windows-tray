@@ -1,0 +1,42 @@
+Licensing
+=========
+
+This repository contains both original project material and modifications to
+KDE Plasma Workspace files.
+
+Original project material
+-------------------------
+
+Unless a file states otherwise, original scripts and documentation created for
+this project are licensed under:
+
+    SPDX-License-Identifier: GPL-2.0-or-later
+
+The full license text is available at:
+
+    LICENSES/GPL-2.0-or-later.txt
+
+Patched KDE Plasma Workspace material
+-------------------------------------
+
+The patch in `patches/` modifies upstream KDE Plasma Workspace files. Those
+files retain their respective upstream copyright notices and licensing terms.
+
+Depending on the upstream file, the applicable SPDX identifier is:
+
+    GPL-2.0-or-later
+
+or:
+
+    LGPL-2.0-or-later
+
+See `docs/LICENSE-AUDIT.md` for the per-file audit and `LICENSES/` for the
+included license texts.
+
+Nothing in this repository is intended to relicense KDE's upstream code.
+
+Project status
+--------------
+
+This is an independent, unofficial modification of KDE Plasma Workspace. It is
+not an official KDE project and is not endorsed by KDE.

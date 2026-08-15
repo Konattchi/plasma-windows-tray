@@ -1,0 +1,37 @@
+Plasma Windows-Style System Tray Mod
+====================================
+
+Base commit:
+668b662b8baafd18d9a544b58d1ccc359c04cb8e
+
+Patch:
+patches/plasma-6.7-systemtray.patch
+
+Patch SHA-256:
+b1afd650673b358e7f4e2b7b6981e3810b21468f67f17e0bdc21877aa7ab6efc
+
+Modified upstream files:
+  applets/systemtray/main.xml
+  applets/systemtray/qml/AbstractItem.qml
+  applets/systemtray/qml/ExpandedRepresentation.qml
+  applets/systemtray/qml/HiddenItemsView.qml
+  applets/systemtray/qml/ItemLoader.qml
+  applets/systemtray/qml/main.qml
+  applets/systemtray/sortedsystemtraymodel.cpp
+  applets/systemtray/sortedsystemtraymodel.h
+  applets/systemtray/systemtray.cpp
+  applets/systemtray/systemtray.h
+  applets/systemtray/systemtraysettings.cpp
+  applets/systemtray/systemtraysettings.h
+
+Package hardening:
+- dynamic Qt6 System Tray plugin discovery
+- Plasma 6.7 series guard
+- immutable first-install backup
+- explicit --backup-from support
+- --dry-run support
+- install/restore hash verification
+- verify.sh state checker
+
+Patch SHA-256:
+b1afd650673b358e7f4e2b7b6981e3810b21468f67f17e0bdc21877aa7ab6efc

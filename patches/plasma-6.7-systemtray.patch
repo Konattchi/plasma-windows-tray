@@ -1,0 +1,1177 @@
+diff --git a/applets/systemtray/main.xml b/applets/systemtray/main.xml
+index 78e4855..d4dd063 100644
+--- a/applets/systemtray/main.xml
++++ b/applets/systemtray/main.xml
+@@ -18,6 +18,9 @@
+       <label>All items that are hidden, forced always in the popup. It's a comma-separated string list of unique identifiers that are either plasmoid plugin ids or StatusNotifier ids.</label>
+       <default></default>
+     </entry>
++    <entry name="trayItemOrder" type="StringList">
++      <label>Persistent custom ordering of System Tray item identifiers.</label>
++    </entry>
+     <entry name="shownItems" type="StringList">
+       <label>All items that are shown. It's a comma-separated string list of unique identifiers that are either plasmoid plugin ids or StatusNotifier ids.</label>
+       <default></default>
+diff --git a/applets/systemtray/qml/AbstractItem.qml b/applets/systemtray/qml/AbstractItem.qml
+index b3a80da..13788f0 100644
+--- a/applets/systemtray/qml/AbstractItem.qml
++++ b/applets/systemtray/qml/AbstractItem.qml
+@@ -11,6 +11,8 @@ pragma ComponentBehavior: Bound
+ import QtQuick
+ import QtQuick.Layouts
+ 
++import org.kde.draganddrop as DnD
++
+ import org.kde.kirigami as Kirigami
+ import org.kde.plasma.components as PlasmaComponents3
+ import org.kde.plasma.core as PlasmaCore
+@@ -23,6 +25,11 @@ PlasmaCore.ToolTipArea {
+     required property var model
+     required property int status
+     required property int effectiveStatus
++    property bool compactMode: false
++    readonly property bool overflowDraggable: model
++        && (model.itemType === "StatusNotifier"
++            || model.itemType === "BackgroundApp"
++            || model.itemType === "Plasmoid")
+ 
+     required property string itemId
+     /*required*/ property alias text: label.text
+@@ -57,44 +64,103 @@ PlasmaCore.ToolTipArea {
+                 || abstractItem.status === PlasmaCore.Types.RequiresAttentionStatus)
+             && Kirigami.Units.longDuration > 0
+     }
++    
++    DnD.DragArea {
++        property bool trayDragWasActive: false
++        property string draggedTrayItemId: ""
++
++        onDragActiveChanged: {
++
++            if (dragActive) {
++                trayDragWasActive = true;
++                draggedTrayItemId = abstractItem.itemId;
++                return;
++            }
++
++            if (!trayDragWasActive) {
++                return;
++            }
++
++            trayDragWasActive = false;
++
++
++            Plasmoid.finishTrayDrag(draggedTrayItemId);
++            draggedTrayItemId = "";
++        }
+ 
+-    MouseArea {
+-        id: mouseArea
+-        propagateComposedEvents: true
+-        // This needs to be above applets when it's in the grid hidden area
+-        // so that it can receive hover events while the mouse is over an applet,
+-        // but below them on regular systray, so collapsing works
+-        z: abstractItem.inHiddenLayout ? 1 : 0
++
++
++        id: kdeOverflowDragArea
+         anchors.fill: abstractItem
+-        hoverEnabled: true
+-        drag.filterChildren: true
+-        // Necessary to make the whole delegate area forward all mouse events
+-        acceptedButtons: Qt.AllButtons
+-        // Using onPositionChanged instead of onEntered because changing the
+-        // index in a scrollable view also changes the view position.
+-        // onEntered will change the index while the items are scrolling,
+-        // making it harder to scroll.
+-        onPositionChanged: if (abstractItem.inHiddenLayout) {
+-            root.hiddenLayout.currentIndex = abstractItem.index
++        // Visible embedded Plasma applets normally sit above the tray's
++        // MouseArea so they can receive their own clicks. Raise our native
++        // drag recognizer only for those visible Plasmoid delegates.
++        //
++        // DnD.DragArea waits for startDragDistance before starting a drag,
++        // so a normal click still reaches the child applet; click+move turns
++        // into our tray drag.
++        z: abstractItem.inVisibleLayout && abstractItem.model.itemType === "Plasmoid"
++            ? 10000
++            : mouseArea.z
++        enabled: abstractItem.overflowDraggable
++
++        source: abstractItem
++        supportedActions: Qt.MoveAction
++        defaultAction: Qt.MoveAction
++        startDragDistance: Kirigami.Units.gridUnit / 2
++
++        // Use a private MIME type only. Do NOT expose text/plain:
++        // Plasma's generic panel drop handling can turn dropped text into notes.
++        mimeData.source: abstractItem
++
++        Component.onCompleted: {
++            mimeData.setData("application/x-plasma-windows-tray-item", abstractItem.itemId);
+         }
+-        onClicked: mouse => { abstractItem.clicked(mouse) }
+-        onPressed: mouse => {
+-            if (abstractItem.inHiddenLayout) {
+-                root.hiddenLayout.currentIndex = abstractItem.index
++
++        MouseArea {
++            id: mouseArea
++            propagateComposedEvents: true
++            // This needs to be above applets when it's in the grid hidden area
++            // so that it can receive hover events while the mouse is over an applet,
++            // but below them on regular systray, so collapsing works
++            z: abstractItem.inHiddenLayout ? 1 : 0
++            anchors.fill: parent
++            hoverEnabled: true
++            drag.filterChildren: true
++            // Necessary to make the whole delegate area forward all mouse events
++            acceptedButtons: Qt.AllButtons
++            // Using onPositionChanged instead of onEntered because changing the
++            // index in a scrollable view also changes the view position.
++            // onEntered will change the index while the items are scrolling,
++            // making it harder to scroll.
++            onPositionChanged: if (abstractItem.inHiddenLayout) {
++                const targetLayout = abstractItem.compactMode ? root.compactHiddenLayout : root.hiddenLayout;
++                if (targetLayout) {
++                    targetLayout.currentIndex = abstractItem.index;
++                }
+             }
+-            abstractItem.hideImmediately()
+-            abstractItem.pressed(mouse)
+-        }
+-        onPressAndHold: mouse => {
+-            if (mouse.button === Qt.LeftButton) {
+-                abstractItem.contextMenu(mouse)
++            onClicked: mouse => { abstractItem.clicked(mouse) }
++            onPressed: mouse => {
++                if (abstractItem.inHiddenLayout) {
++                    const targetLayout = abstractItem.compactMode ? root.compactHiddenLayout : root.hiddenLayout;
++                    if (targetLayout) {
++                        targetLayout.currentIndex = abstractItem.index;
++                    }
++                }
++                abstractItem.hideImmediately()
++                abstractItem.pressed(mouse)
++            }
++            onPressAndHold: mouse => {
++                if (mouse.button === Qt.LeftButton) {
++                    abstractItem.contextMenu(mouse)
++                }
++            }
++            onWheel: wheel => {
++                abstractItem.wheel(wheel);
++                //Don't accept the event in order to make the scrolling by mouse wheel working
++                //for the parent scrollview this icon is in.
++                wheel.accepted = false;
+             }
+-        }
+-        onWheel: wheel => {
+-            abstractItem.wheel(wheel);
+-            //Don't accept the event in order to make the scrolling by mouse wheel working
+-            //for the parent scrollview this icon is in.
+-            wheel.accepted = false;
+         }
+     }
+ 
+@@ -139,7 +205,9 @@ PlasmaCore.ToolTipArea {
+ 
+             property alias container: abstractItem
+             property alias inVisibleLayout: abstractItem.inVisibleLayout
+-            readonly property int size: abstractItem.inVisibleLayout ? root.itemSize : Kirigami.Units.iconSizes.medium
++            readonly property int size: (abstractItem.inVisibleLayout || abstractItem.compactMode)
++                ? root.itemSize
++                : Kirigami.Units.iconSizes.medium
+ 
+             Layout.alignment: Qt.AlignHCenter | Qt.AlignVCenter
+             implicitWidth: root.vertical && abstractItem.inVisibleLayout ? abstractItem.width : size
+@@ -151,7 +219,7 @@ PlasmaCore.ToolTipArea {
+             Layout.fillWidth: true
+             maximumLineCount: abstractItem.maxTextLines
+ 
+-            visible: abstractItem.inHiddenLayout
++            visible: abstractItem.inHiddenLayout && !abstractItem.compactMode
+ 
+             verticalAlignment: Text.AlignVCenter
+             elide: Text.ElideRight
+diff --git a/applets/systemtray/qml/ExpandedRepresentation.qml b/applets/systemtray/qml/ExpandedRepresentation.qml
+index 12ba837..bd72836 100644
+--- a/applets/systemtray/qml/ExpandedRepresentation.qml
++++ b/applets/systemtray/qml/ExpandedRepresentation.qml
+@@ -9,6 +9,8 @@ pragma ComponentBehavior: Bound
+ import QtQuick
+ import QtQuick.Layouts
+ 
++import org.kde.draganddrop as DnD
++
+ import org.kde.kirigami as Kirigami
+ import org.kde.plasma.components as PlasmaComponents
+ import org.kde.plasma.core as PlasmaCore
+@@ -22,6 +24,7 @@ Item {
+     Layout.minimumHeight: Kirigami.Units.gridUnit * 24
+ 
+     property alias hiddenLayout: hiddenItemsView.layout
++    property alias compactHiddenLayout: compactTrayGrid
+     property alias plasmoidContainer: container
+ 
+     // Header
+@@ -38,7 +41,143 @@ Item {
+         }
+     }
+ 
++    // Persistent drag ordering for built-in Plasma applets.
++    // Reuse the same persistent ordering backend as application icons, but
++    // only when the drag finishes inside KDE's upper Plasmoid grid.
++    Connections {
++        id: plasmoidOrderBus
++        target: Plasmoid
++
++        function onTrayDragFinished(itemId, globalPosition) {
++            const upper = hiddenItemsView.layout;
++            if (!upper || upper.count < 2 || upper.cellWidth <= 0 || upper.cellHeight <= 0) {
++                return;
++            }
++
++            const local = upper.mapFromGlobal(globalPosition.x, globalPosition.y);
++
++            // Strictly stay inside the upper Plasma-applet section.
++            if (local.x < 0 || local.y < 0
++                    || local.x >= upper.width || local.y >= upper.height) {
++                return;
++            }
++
++            const columns = Math.max(1, Math.floor(upper.width / upper.cellWidth));
++            const column = Math.max(0, Math.min(
++                Math.floor(local.x / upper.cellWidth),
++                columns - 1
++            ));
++            const row = Math.max(0, Math.floor(local.y / upper.cellHeight));
++
++            let index = row * columns + column;
++            index = Math.max(0, Math.min(index, upper.count - 1));
++
++            const target = upper.itemAtIndex(index);
++            const targetId = target?.model?.itemId ?? "";
++            const targetType = target?.model?.itemType ?? "";
++
++            // This ordering domain is Plasmoid <-> Plasmoid only.
++            if (!targetId || targetType !== "Plasmoid" || targetId === itemId) {
++                return;
++            }
++
++            // Row-major grid: left/right half of the hovered cell means
++            // before/after that applet.
++            const before = (local.x - column * upper.cellWidth)
++                < upper.cellWidth / 2;
++
++
++            Plasmoid.reorderTrayItem(itemId, targetId, before);
++        }
++    }
++
+     // Main content layout
++    DnD.DropArea {
++        id: kdePopupHideDropArea
++        anchors.fill: parent
++        z: 900
++        preventStealing: true
++        enabled: !systemTrayState.activeApplet
++
++        function trayItemId(event) {
++            const format = "application/x-plasma-windows-tray-item";
++            if (event.mimeData.formats.indexOf(format) < 0) {
++                return null;
++            }
++
++            if (event.mimeData.source && event.mimeData.source.itemId) {
++                return event.mimeData.source.itemId;
++            }
++
++            return event.mimeData.getDataAsByteArray(format);
++        }
++
++        onDragEnter: event => {
++            if (trayItemId(event)) {
++                event.accept(Qt.MoveAction);
++            } else {
++                event.ignore();
++            }
++        }
++
++        onDragMove: event => {
++            if (trayItemId(event)) {
++                event.accept(Qt.MoveAction);
++            } else {
++                event.ignore();
++            }
++        }
++
++        onDrop: event => {
++            const itemId = trayItemId(event);
++            if (!itemId) {
++                event.ignore();
++                return;
++            }
++
++            Plasmoid.hideTrayItem(itemId);
++            event.accept(Qt.MoveAction);
++        }
++    }
++
++    Connections {
++        id: hiddenTrayOrderBus
++        target: Plasmoid
++
++        function onTrayDragFinished(itemId, globalPosition) {
++            const local = compactTrayGrid.mapFromGlobal(globalPosition.x, globalPosition.y);
++
++
++            if (local.x < 0 || local.y < 0
++                    || local.x >= compactTrayGrid.width
++                    || local.y >= compactTrayGrid.height
++                    || compactTrayGrid.count < 2) {
++                return;
++            }
++
++            const col = Math.max(0, Math.min(
++                Math.floor(local.x / compactTrayGrid.cellWidth),
++                compactTrayGrid.columns - 1
++            ));
++            const row = Math.max(0, Math.floor(local.y / compactTrayGrid.cellHeight));
++
++            let idx = row * compactTrayGrid.columns + col;
++            idx = Math.max(0, Math.min(idx, compactTrayGrid.count - 1));
++
++            const target = compactTrayGrid.itemAtIndex(idx);
++            const targetId = target?.model?.itemId ?? "";
++            const before = (local.x - col * compactTrayGrid.cellWidth)
++                < compactTrayGrid.cellWidth / 2;
++
++
++            if (!targetId || targetId === itemId) {
++                return;
++            }
++
++            Plasmoid.reorderTrayItem(itemId, targetId, before);
++        }
++    }
++
+     ColumnLayout {
+         id: expandedRepresentation
+         anchors.fill: parent
+@@ -268,12 +407,13 @@ Item {
+             }
+         }
+ 
+-        // Grid view of all available items
++        // KDE's original hidden-items view, but only for built-in Plasma controls.
+         HiddenItemsView {
+             id: hiddenItemsView
+             Layout.fillWidth: true
+             Layout.fillHeight: true
+             Layout.topMargin: Kirigami.Units.smallSpacing
++            trayModel: root.hiddenPlasmoidModel
+             visible: !systemTrayState.activeApplet
+ 
+             KeyNavigation.up: pinButton
+@@ -286,6 +426,60 @@ Item {
+             }
+         }
+ 
++        // Compact application overflow. Inline on purpose: no new QML
++        // component needs to be registered in the Plasma QML module.
++        GridView {
++            id: compactTrayGrid
++
++            readonly property int columns: 6
++            readonly property int maximumRows: 4
++            readonly property int cellLength: Math.max(root.itemSize, Kirigami.Units.iconSizes.smallMedium)
++                + Kirigami.Units.smallSpacing * 2
++            readonly property int rowsNeeded: Math.max(1, Math.ceil(count / columns))
++            readonly property int visibleRows: Math.min(maximumRows, rowsNeeded)
++            readonly property int itemCount: count
++
++            Layout.fillWidth: true
++            Layout.fillHeight: false
++            Layout.preferredHeight: visible ? visibleRows * cellLength : 0
++            Layout.maximumHeight: maximumRows * cellLength
++
++            visible: !systemTrayState.activeApplet && count > 0
++            clip: true
++            interactive: rowsNeeded > maximumRows
++            boundsBehavior: Flickable.StopAtBounds
++
++            model: root.hiddenApplicationModel
++
++                        cellWidth: Math.floor(width / columns)
++            cellHeight: cellLength
++            currentIndex: -1
++            highlight: PlasmaExtras.Highlight {}
++            highlightMoveDuration: 0
++            pixelAligned: true
++            keyNavigationEnabled: true
++            activeFocusOnTab: true
++
++            delegate: ItemLoader {
++                id: compactDelegate
++                width: compactTrayGrid.cellWidth
++                height: compactTrayGrid.cellHeight
++                compactMode: true
++
++                Accessible.role: Accessible.ListItem
++            }
++
++            KeyNavigation.up: hiddenItemsView.visible ? hiddenItemsView.layout : pinButton
++
++            onActiveFocusChanged: {
++                if (activeFocus && currentIndex === -1 && count > 0) {
++                    currentIndex = 0;
++                } else if (!activeFocus) {
++                    currentIndex = -1;
++                }
++            }
++        }
++
+         // Container for currently visible item
+         PlasmoidPopupsContainer {
+             id: container
+diff --git a/applets/systemtray/qml/HiddenItemsView.qml b/applets/systemtray/qml/HiddenItemsView.qml
+index a7e6f96..b064e88 100644
+--- a/applets/systemtray/qml/HiddenItemsView.qml
++++ b/applets/systemtray/qml/HiddenItemsView.qml
+@@ -17,6 +17,7 @@ PlasmaComponents3.ScrollView {
+     id: hiddenTasksView
+ 
+     property alias layout: hiddenTasks
++    property var trayModel: root.hiddenModel
+ 
+     hoverEnabled: true
+     background: null
+@@ -52,7 +53,7 @@ PlasmaComponents3.ScrollView {
+ 
+         readonly property int itemCount: model.count
+ 
+-        model: root.hiddenModel
++        model: hiddenTasksView.trayModel
+         delegate: ItemLoader {
+             width: hiddenTasks.cellWidth
+             height: hiddenTasks.cellHeight
+diff --git a/applets/systemtray/qml/ItemLoader.qml b/applets/systemtray/qml/ItemLoader.qml
+index 72ebc1c..63371bc 100644
+--- a/applets/systemtray/qml/ItemLoader.qml
++++ b/applets/systemtray/qml/ItemLoader.qml
+@@ -9,9 +9,11 @@ pragma ComponentBehavior: Bound
+ import QtQuick
+ 
+ Loader {
++    id: itemLoader
+     required property int index
+     required property int effectiveStatus
+     required property var model
++    property bool compactMode: false
+ 
+     z: x + 1 // always be above what it's on top of, even for x==0
+ 
+@@ -36,6 +38,8 @@ Loader {
+             status: Qt.binding(() => model.status),
+             effectiveStatus: Qt.binding(() => effectiveStatus),
+             model: Qt.binding(() => model),
++            compactMode: Qt.binding(() => compactMode),
+         });
+     }
+-}
++
++    }
+diff --git a/applets/systemtray/qml/main.qml b/applets/systemtray/qml/main.qml
+index 1380039..9cca6ff 100644
+--- a/applets/systemtray/qml/main.qml
++++ b/applets/systemtray/qml/main.qml
+@@ -20,6 +20,20 @@ import org.kde.plasma.plasmoid
+ ContainmentItem {
+     id: root
+ 
++
++    // For popup -> panel, remember the target item ID before
++    // showTrayItem() mutates the visible model. The index is not stable.
++    property string pendingVisibleItemId: ""
++    property string pendingVisibleTargetId: ""
++    property bool pendingVisibleBefore: false
++
++    function clearPendingVisibleTarget() {
++        pendingVisibleItemId = "";
++        pendingVisibleTargetId = "";
++        pendingVisibleBefore = false;
++    }
++
++
+     readonly property bool vertical: Plasmoid.formFactor === PlasmaCore.Types.Vertical
+     readonly property bool reverseLayout: Plasmoid.configuration.reverseIconOrder
+ 
+@@ -36,6 +50,9 @@ ContainmentItem {
+     readonly property bool oneRowOrColumn: tasksGrid.rowsOrColumns === 1
+ 
+     readonly property alias hiddenModel: hiddenModel
++    readonly property alias hiddenPlasmoidModel: hiddenPlasmoidModel
++    readonly property alias hiddenApplicationModel: hiddenApplicationModel
++    readonly property alias compactHiddenLayout: expandedRepresentation.compactHiddenLayout
+ 
+     Component.onCompleted: {
+         // We need all the plasmoiditems to be there for correct working of shortcuts.
+@@ -73,6 +90,28 @@ ContainmentItem {
+         Component.onCompleted: sourceModel = Plasmoid.systemTrayModel // avoid unnecessary binding, it causes loops
+     }
+ 
++    // Stock KDE controls: built-in Plasma applets only.
++    KItemModels.KSortFilterProxyModel {
++        id: hiddenPlasmoidModel
++        filterRoleName: "itemType"
++        filterRowCallback: (sourceRow, sourceParent) => {
++            const value = sourceModel.data(sourceModel.index(sourceRow, 0, sourceParent), filterRole);
++            return value === "Plasmoid";
++        }
++        Component.onCompleted: sourceModel = hiddenModel
++    }
++
++    // Compact overflow for application-owned tray entries.
++    KItemModels.KSortFilterProxyModel {
++        id: hiddenApplicationModel
++        filterRoleName: "itemType"
++        filterRowCallback: (sourceRow, sourceParent) => {
++            const value = sourceModel.data(sourceModel.index(sourceRow, 0, sourceParent), filterRole);
++            return value === "StatusNotifier" || value === "BackgroundApp";
++        }
++        Component.onCompleted: sourceModel = hiddenModel
++    }
++
+     Instantiator {
+         id: hiddenInstantiator
+         // It's important that those are inactive at creation time
+@@ -131,6 +170,19 @@ ContainmentItem {
+ 
+             /** Extracts the name of the system tray applet in the drag data if present
+             * otherwise returns null*/
++            function trayItemIdFromEvent(event) {
++                const format = "application/x-plasma-windows-tray-item";
++                if (event.mimeData.formats.indexOf(format) < 0) {
++                    return null;
++                }
++
++                if (event.mimeData.source && event.mimeData.source.itemId) {
++                    return event.mimeData.source.itemId;
++                }
++
++                return event.mimeData.getDataAsByteArray(format);
++            }
++
+             function systemTrayAppletName(event) {
+                 if (event.mimeData.formats.indexOf("text/x-plasmoidservicename") < 0) {
+                     return null;
+@@ -144,12 +196,24 @@ ContainmentItem {
+             }
+ 
+             onDragEnter: event => {
++                if (trayItemIdFromEvent(event)) {
++                    event.accept(Qt.MoveAction);
++                    return;
++                }
++
+                 if (!systemTrayAppletName(event)) {
+                     event.ignore();
+                 }
+             }
+ 
+             onDrop: event => {
++                const trayItemId = trayItemIdFromEvent(event);
++                if (trayItemId) {
++                    Plasmoid.showTrayItem(trayItemId);
++                    event.accept(Qt.MoveAction);
++                    return;
++                }
++
+                 const plasmoidId = systemTrayAppletName(event);
+                 if (!plasmoidId) {
+                     event.ignore();
+@@ -231,12 +295,132 @@ ContainmentItem {
+ 
+                 model: activeModel
+ 
++                
++                // Dedicated target for dragging hidden items back onto the visible tray.
++                // This sits on the actual tray GridView, not on the surrounding panel.
++                DnD.DropArea {
++                    id: trayReturnDropArea
++                    anchors.fill: parent
++                    z: 5000
++                    preventStealing: true
++
++                    function trayItemId(event) {
++                        const format = "application/x-plasma-windows-tray-item";
++
++                        if (event.mimeData.formats.indexOf(format) < 0) {
++                            return null;
++                        }
++
++                        // Same-process Wayland drag: prefer the original QML source object.
++                        if (event.mimeData.source && event.mimeData.source.itemId) {
++                            return event.mimeData.source.itemId;
++                        }
++
++                        // Fallback to raw MIME bytes.
++                        return event.mimeData.getDataAsByteArray(format);
++                    }
++
++                    onDragEnter: event => {
++                        const itemId = trayItemId(event);
++
++                        if (!itemId) {
++                            event.ignore();
++                            return;
++                        }
++
++                        event.accept(Qt.MoveAction);
++                    }
++
++                    onDragMove: event => {
++                        const itemId = trayItemId(event);
++
++                        if (!itemId) {
++                            event.ignore();
++                            return;
++                        }
++
++                        event.accept(Qt.MoveAction);
++                    }
++
++                    onDrop: event => {
++                        const itemId = trayItemId(event);
++
++                        if (!itemId) {
++                            event.ignore();
++                            return;
++                        }
++
++                        // Do the visibility change here, on the actual tray surface.
++                                                // Capture the semantic target before the visible model changes:
++                        // Resolve the semantic target while the visible grid still
++                        // contains only the pre-drop items.
++                        {
++                            const sourceItem = event.mimeData.source;
++                            const sourceWasHidden = sourceItem && sourceItem.inHiddenLayout;
++
++                            root.clearPendingVisibleTarget();
++
++                            if (sourceWasHidden && tasksGrid.count > 0) {
++                                const local = tasksGrid.mapFromItem(
++                                    trayReturnDropArea, event.x, event.y);
++
++                                if (local.x >= 0 && local.y >= 0
++                                        && local.x < tasksGrid.width
++                                        && local.y < tasksGrid.height) {
++                                    let idx;
++                                    let before;
++
++                                    if (!root.vertical) {
++                                        const col = Math.max(0, Math.min(
++                                            Math.floor(local.x / tasksGrid.cellWidth),
++                                            Math.ceil(tasksGrid.count / tasksGrid.rowsOrColumns) - 1
++                                        ));
++                                        const row = Math.max(0, Math.min(
++                                            Math.floor(local.y / tasksGrid.cellHeight),
++                                            tasksGrid.rowsOrColumns - 1
++                                        ));
++                                        idx = col * tasksGrid.rowsOrColumns + row;
++                                        before = (local.x - col * tasksGrid.cellWidth)
++                                            < tasksGrid.cellWidth / 2;
++                                    } else {
++                                        const row = Math.max(
++                                            0, Math.floor(local.y / tasksGrid.cellHeight));
++                                        const col = Math.max(0, Math.min(
++                                            Math.floor(local.x / tasksGrid.cellWidth),
++                                            tasksGrid.rowsOrColumns - 1
++                                        ));
++                                        idx = row * tasksGrid.rowsOrColumns + col;
++                                        before = (local.y - row * tasksGrid.cellHeight)
++                                            < tasksGrid.cellHeight / 2;
++                                    }
++
++                                    idx = Math.max(0, Math.min(idx, tasksGrid.count - 1));
++                                    const target = tasksGrid.itemAtIndex(idx);
++                                    const targetId = target?.model?.itemId ?? "";
++
++                                    if (targetId && targetId !== itemId) {
++                                        root.pendingVisibleItemId = itemId;
++                                        root.pendingVisibleTargetId = targetId;
++                                        root.pendingVisibleBefore = before;
++
++                                    }
++                                }
++                            }
++                        }
++
++Plasmoid.showTrayItem(itemId);
++                        event.accept(Qt.MoveAction);
++
++                    }
++                }
++                
+                 delegate: ItemLoader {
+                     id: delegate
+ 
+                     width: tasksGrid.cellWidth
+                     height: tasksGrid.cellHeight
+ 
++
+                     // We need to recalculate the stacking order of the z values due to how keyboard navigation works
+                     // the tab order depends exclusively from this, so we redo it as the position in the list
+                     // ensuring tab navigation focuses the expected items
+@@ -257,14 +441,148 @@ ContainmentItem {
+             ExpanderArrow {
+                 id: expander
+ 
+-                Layout.row: root.vertical && !root.reverseLayout ? 1 : 0 // Explicitly define grid coordinates
+-                Layout.column: root.vertical ? 0 : 1                     // to prevent overlapping
++                Layout.row: root.vertical && !root.reverseLayout ? 1 : 0
++                Layout.column: root.vertical ? 0 : 1
+ 
+                 Layout.fillWidth: vertical
+                 Layout.fillHeight: !vertical
+                 Layout.alignment: vertical ? Qt.AlignVCenter : Qt.AlignHCenter
++
+                 iconSize: tasksGrid.itemSize
+                 visible: root.hiddenLayout.itemCount > 0
++                    || root.hiddenApplicationModel.count > 0
++                    || kdeExpanderDropArea.containsDrag
++
++                DnD.DropArea {
++                    id: kdeExpanderDropArea
++                    anchors.fill: parent
++                    z: 1000
++                    preventStealing: true
++
++                    function trayItemId(event) {
++                        const format = "application/x-plasma-windows-tray-item";
++                        if (event.mimeData.formats.indexOf(format) < 0) {
++                            return null;
++                        }
++
++                        if (event.mimeData.source && event.mimeData.source.itemId) {
++                            return event.mimeData.source.itemId;
++                        }
++
++                        return event.mimeData.getDataAsByteArray(format);
++                    }
++
++                    onDragEnter: event => {
++                        if (!trayItemId(event)) {
++                            event.ignore();
++                            return;
++                        }
++
++                        systemTrayState.expanded = true;
++                        event.accept(Qt.MoveAction);
++                    }
++
++                    onDragMove: event => {
++                        if (trayItemId(event)) {
++                            systemTrayState.expanded = true;
++                            event.accept(Qt.MoveAction);
++                        } else {
++                            event.ignore();
++                        }
++                    }
++
++                    onDrop: event => {
++                        const itemId = trayItemId(event);
++                        if (!itemId) {
++                            event.ignore();
++                            return;
++                        }
++
++                        // The arrow is bidirectional:
++                        // - dragging a visible tray item onto ^ hides it
++                        // - dragging a hidden popup item onto ^ shows it
++                        //
++                        // This is also the fallback when activeModel.count == 0,
++                        // because the visible tray GridView collapses to zero width.
++                        const sourceItem = event.mimeData.source;
++                        const sourceWasHidden = sourceItem && sourceItem.inHiddenLayout;
++
++                        if (sourceWasHidden) {
++                            Plasmoid.showTrayItem(itemId);
++                        } else {
++                            Plasmoid.hideTrayItem(itemId);
++                            systemTrayState.expanded = true;
++                        }
++
++                        event.accept(Qt.MoveAction);
++                    }
++                }
++            }
++        }
++
++        Connections {
++            id: visibleTrayOrderBus
++            target: Plasmoid
++
++            function onTrayDragFinished(itemId, globalPosition) {
++                // Apply the previously captured semantic target:
++                // Numeric indices can shift when showTrayItem() inserts the
++                // dragged item. The captured target ID does not.
++                if (root.pendingVisibleItemId === itemId
++                        && root.pendingVisibleTargetId) {
++                    const targetId = root.pendingVisibleTargetId;
++                    const before = root.pendingVisibleBefore;
++
++
++                    root.clearPendingVisibleTarget();
++                    Plasmoid.reorderTrayItem(itemId, targetId, before);
++                    return;
++                }
++
++                const local = tasksGrid.mapFromGlobal(globalPosition.x, globalPosition.y);
++
++
++                if (local.x < 0 || local.y < 0
++                        || local.x >= tasksGrid.width
++                        || local.y >= tasksGrid.height
++                        || tasksGrid.count < 2) {
++                    return;
++                }
++
++                let idx;
++                let before;
++
++                if (!root.vertical) {
++                    const col = Math.max(0, Math.min(
++                        Math.floor(local.x / tasksGrid.cellWidth),
++                        Math.ceil(tasksGrid.count / tasksGrid.rowsOrColumns) - 1
++                    ));
++                    const row = Math.max(0, Math.min(
++                        Math.floor(local.y / tasksGrid.cellHeight),
++                        tasksGrid.rowsOrColumns - 1
++                    ));
++                    idx = col * tasksGrid.rowsOrColumns + row;
++                    before = (local.x - col * tasksGrid.cellWidth) < tasksGrid.cellWidth / 2;
++                } else {
++                    const row = Math.max(0, Math.floor(local.y / tasksGrid.cellHeight));
++                    const col = Math.max(0, Math.min(
++                        Math.floor(local.x / tasksGrid.cellWidth),
++                        tasksGrid.rowsOrColumns - 1
++                    ));
++                    idx = row * tasksGrid.rowsOrColumns + col;
++                    before = (local.y - row * tasksGrid.cellHeight) < tasksGrid.cellHeight / 2;
++                }
++
++                idx = Math.max(0, Math.min(idx, tasksGrid.count - 1));
++                const target = tasksGrid.itemAtIndex(idx);
++                const targetId = target?.model?.itemId ?? "";
++
++
++                if (!targetId || targetId === itemId) {
++                    return;
++                }
++
++                Plasmoid.reorderTrayItem(itemId, targetId, before);
+             }
+         }
+ 
+diff --git a/applets/systemtray/sortedsystemtraymodel.cpp b/applets/systemtray/sortedsystemtraymodel.cpp
+index d434928..44e0139 100644
+--- a/applets/systemtray/sortedsystemtraymodel.cpp
++++ b/applets/systemtray/sortedsystemtraymodel.cpp
+@@ -7,6 +7,7 @@
+ #include "sortedsystemtraymodel.h"
+ #include "debug.h"
+ #include "systemtraymodel.h"
++#include "systemtraysettings.h"
+ 
+ #include <QList>
+ 
+@@ -18,11 +19,20 @@ static const QList<QString> s_categoryOrder = {
+     QStringLiteral("Hardware"),
+ };
+ 
+-SortedSystemTrayModel::SortedSystemTrayModel(SortingType sorting, QObject *parent)
++SortedSystemTrayModel::SortedSystemTrayModel(SortingType sorting, QPointer<SystemTraySettings> settings, QObject *parent)
+     : QSortFilterProxyModel(parent)
+     , m_sorting(sorting)
++    , m_settings(settings)
+ {
+     setSortLocaleAware(true);
++
++    if (m_settings && m_sorting == SortingType::SystemTray) {
++        connect(m_settings, &SystemTraySettings::configurationChanged, this, [this]() {
++            invalidate();
++            sort(0);
++        });
++    }
++
+     sort(0);
+ }
+ 
+@@ -52,6 +62,22 @@ bool SortedSystemTrayModel::lessThanSystemTray(const QModelIndex &left, const QM
+ {
+     QVariant itemIdLeft = left.data(static_cast<int>(BaseModel::BaseRole::ItemId));
+     QVariant itemIdRight = right.data(static_cast<int>(BaseModel::BaseRole::ItemId));
++
++    if (m_settings) {
++        const QStringList order = m_settings->itemOrder();
++        const int leftOrder = order.indexOf(itemIdLeft.toString());
++        const int rightOrder = order.indexOf(itemIdRight.toString());
++
++        if (leftOrder >= 0 && rightOrder >= 0 && leftOrder != rightOrder) {
++            return leftOrder < rightOrder;
++        }
++        if (leftOrder >= 0 && rightOrder < 0) {
++            return true;
++        }
++        if (leftOrder < 0 && rightOrder >= 0) {
++            return false;
++        }
++    }
+     if (itemIdRight.toString() == QLatin1String("org.kde.plasma.notifications")) {
+         // return false when at least right is "org.kde.plasma.notifications"
+         return false;
+diff --git a/applets/systemtray/sortedsystemtraymodel.h b/applets/systemtray/sortedsystemtraymodel.h
+index 1cca2c7..9575967 100644
+--- a/applets/systemtray/sortedsystemtraymodel.h
++++ b/applets/systemtray/sortedsystemtraymodel.h
+@@ -7,6 +7,9 @@
+ #pragma once
+ 
+ #include <QSortFilterProxyModel>
++#include <QPointer>
++
++class SystemTraySettings;
+ 
+ class SortedSystemTrayModel : public QSortFilterProxyModel
+ {
+@@ -17,7 +20,7 @@ public:
+         SystemTray,
+     };
+ 
+-    explicit SortedSystemTrayModel(SortingType sorting, QObject *parent = nullptr);
++    explicit SortedSystemTrayModel(SortingType sorting, QPointer<SystemTraySettings> settings = nullptr, QObject *parent = nullptr);
+ 
+ protected:
+     bool lessThan(const QModelIndex &source_left, const QModelIndex &source_right) const override;
+@@ -30,4 +33,5 @@ private:
+     int compareCategoriesOrderly(const QModelIndex &left, const QModelIndex &right) const;
+ 
+     SortingType m_sorting;
++    QPointer<SystemTraySettings> m_settings;
+ };
+diff --git a/applets/systemtray/systemtray.cpp b/applets/systemtray/systemtray.cpp
+index 86fa6f9..245c2b7 100644
+--- a/applets/systemtray/systemtray.cpp
++++ b/applets/systemtray/systemtray.cpp
+@@ -18,6 +18,7 @@
+ #include "systemtraysettings.h"
+ 
+ #include <QGuiApplication>
++#include <QCursor>
+ #include <QMenu>
+ #include <QMetaMethod>
+ #include <QMetaObject>
+@@ -412,6 +413,21 @@ QPointF SystemTray::popupPosition(QQuickItem *visualParent, int x, int y)
+     return QPoint();
+ }
+ 
++QPointF SystemTray::cursorPosition() const
++{
++    return QCursor::pos();
++}
++
++void SystemTray::finishTrayDrag(const QString &itemId)
++{
++    if (itemId.isEmpty()) {
++        return;
++    }
++
++    Q_EMIT trayDragFinished(itemId, QCursor::pos());
++}
++
++
+ bool SystemTray::isSystemTrayApplet(const QString &appletId)
+ {
+     if (m_plasmoidRegistry) {
+@@ -445,7 +461,7 @@ SystemTrayModel *SystemTray::systemTrayModel()
+ QAbstractItemModel *SystemTray::sortedSystemTrayModel()
+ {
+     if (!m_sortedSystemTrayModel) {
+-        m_sortedSystemTrayModel = new SortedSystemTrayModel(SortedSystemTrayModel::SortingType::SystemTray, this);
++        m_sortedSystemTrayModel = new SortedSystemTrayModel(SortedSystemTrayModel::SortingType::SystemTray, m_settings, this);
+         m_sortedSystemTrayModel->setSourceModel(systemTrayModel());
+     }
+     return m_sortedSystemTrayModel;
+@@ -454,7 +470,7 @@ QAbstractItemModel *SystemTray::sortedSystemTrayModel()
+ QAbstractItemModel *SystemTray::configSystemTrayModel()
+ {
+     if (!m_configSystemTrayModel) {
+-        m_configSystemTrayModel = new SortedSystemTrayModel(SortedSystemTrayModel::SortingType::ConfigurationPage, this);
++        m_configSystemTrayModel = new SortedSystemTrayModel(SortedSystemTrayModel::SortingType::ConfigurationPage, nullptr, this);
+         m_configSystemTrayModel->setSourceModel(systemTrayModel());
+     }
+     return m_configSystemTrayModel;
+@@ -662,6 +678,52 @@ void SystemTray::scroll(const QString &service, int delta, const QString &direct
+     source->scroll(delta, direction);
+ }
+ 
++void SystemTray::showTrayItem(const QString &itemId)
++{
++    if (!m_settings || itemId.isEmpty()) {
++        return;
++    }
++
++    m_settings->showItem(itemId);
++}
++
++void SystemTray::hideTrayItem(const QString &itemId)
++{
++    if (!m_settings || itemId.isEmpty()) {
++        return;
++    }
++
++    m_settings->hideItem(itemId);
++}
++
++void SystemTray::reorderTrayItem(const QString &itemId, const QString &targetItemId, bool before)
++{
++    if (!m_settings || itemId.isEmpty() || targetItemId.isEmpty() || itemId == targetItemId) {
++        return;
++    }
++
++    QStringList order = m_settings->itemOrder();
++
++    auto *model = sortedSystemTrayModel();
++    for (int row = 0; row < model->rowCount(); ++row) {
++        const QString id = model->data(model->index(row, 0), static_cast<int>(BaseModel::BaseRole::ItemId)).toString();
++        if (!id.isEmpty() && !order.contains(id)) {
++            order.append(id);
++        }
++    }
++
++    order.removeAll(itemId);
++
++    const int targetIndex = order.indexOf(targetItemId);
++    if (targetIndex < 0) {
++        order.append(itemId);
++    } else {
++        order.insert(targetIndex + (before ? 0 : 1), itemId);
++    }
++
++    m_settings->setItemOrder(order);
++}
++
+ K_PLUGIN_CLASS_WITH_JSON(SystemTray, "metadata.json")
+ 
+ #include "systemtray.moc"
+diff --git a/applets/systemtray/systemtray.h b/applets/systemtray/systemtray.h
+index 743f599..5f3c5e1 100644
+--- a/applets/systemtray/systemtray.h
++++ b/applets/systemtray/systemtray.h
+@@ -55,6 +55,8 @@ public:
+      * coordinates
+      */
+     Q_INVOKABLE QPointF popupPosition(QQuickItem *visualParent, int x, int y);
++    Q_INVOKABLE QPointF cursorPosition() const;
++    Q_INVOKABLE void finishTrayDrag(const QString &itemId);
+ 
+     /**
+      * @brief isSystemTrayApplet checks if applet is allowed in the System Tray
+@@ -78,6 +80,13 @@ public:
+ 
+     Q_INVOKABLE void scroll(const QString &service, int delta, const QString &direction);
+ 
++    Q_INVOKABLE void showTrayItem(const QString &itemId);
++    Q_INVOKABLE void hideTrayItem(const QString &itemId);
++    Q_INVOKABLE void reorderTrayItem(const QString &itemId, const QString &targetItemId, bool before);
++
++Q_SIGNALS:
++    void trayDragFinished(const QString &itemId, const QPointF &globalPosition);
++
+ private Q_SLOTS:
+     // synchronizes with configuration and deletes not allowed applets
+     void onEnabledAppletsChanged();
+diff --git a/applets/systemtray/systemtraysettings.cpp b/applets/systemtray/systemtraysettings.cpp
+index 059853a..1c541ec 100644
+--- a/applets/systemtray/systemtraysettings.cpp
++++ b/applets/systemtray/systemtraysettings.cpp
+@@ -15,6 +15,7 @@ static const QString EXTRA_ITEMS_KEY = QStringLiteral("extraItems");
+ static const QString SHOW_ALL_ITEMS_KEY = QStringLiteral("showAllItems");
+ static const QString SHOWN_ITEMS_KEY = QStringLiteral("shownItems");
+ static const QString HIDDEN_ITEMS_KEY = QStringLiteral("hiddenItems");
++static const QString TRAY_ITEM_ORDER_KEY = QStringLiteral("trayItemOrder");
+ static const QString DISABLED_SNIS_KEY = QStringLiteral("disabledStatusNotifiers");
+ 
+ SystemTraySettings::SystemTraySettings(KConfigLoader *config, QObject *parent)
+@@ -96,6 +97,53 @@ const QStringList SystemTraySettings::hiddenItems() const
+     return config->property(HIDDEN_ITEMS_KEY).toStringList();
+ }
+ 
++const QStringList SystemTraySettings::itemOrder() const
++{
++    return config->property(TRAY_ITEM_ORDER_KEY).toStringList();
++}
++
++void SystemTraySettings::setItemOrder(const QStringList &order)
++{
++    writeConfigValue(TRAY_ITEM_ORDER_KEY, order);
++    Q_EMIT configurationChanged();
++}
++
++void SystemTraySettings::showItem(const QString &itemId)
++{
++    if (itemId.isEmpty()) {
++        return;
++    }
++
++    QStringList hidden = hiddenItems();
++    hidden.removeAll(itemId);
++
++    QStringList shown = shownItems();
++    if (!shown.contains(itemId)) {
++        shown.append(itemId);
++    }
++
++    writeConfigValue(HIDDEN_ITEMS_KEY, hidden);
++    writeConfigValue(SHOWN_ITEMS_KEY, shown);
++}
++
++void SystemTraySettings::hideItem(const QString &itemId)
++{
++    if (itemId.isEmpty()) {
++        return;
++    }
++
++    QStringList shown = shownItems();
++    shown.removeAll(itemId);
++
++    QStringList hidden = hiddenItems();
++    if (!hidden.contains(itemId)) {
++        hidden.append(itemId);
++    }
++
++    writeConfigValue(SHOWN_ITEMS_KEY, shown);
++    writeConfigValue(HIDDEN_ITEMS_KEY, hidden);
++}
++
+ void SystemTraySettings::cleanupPlugin(const QString &pluginId)
+ {
+     removeKnownPlugin(pluginId);
+diff --git a/applets/systemtray/systemtraysettings.h b/applets/systemtray/systemtraysettings.h
+index d16782d..7fdd126 100644
+--- a/applets/systemtray/systemtraysettings.h
++++ b/applets/systemtray/systemtraysettings.h
+@@ -36,6 +36,11 @@ public:
+     bool isShowAllItems() const;
+     const QStringList shownItems() const;
+     const QStringList hiddenItems() const;
++    const QStringList itemOrder() const;
++    void setItemOrder(const QStringList &order);
++
++    void showItem(const QString &itemId);
++    void hideItem(const QString &itemId);
+ 
+     void cleanupPlugin(const QString &pluginId);
+ 
