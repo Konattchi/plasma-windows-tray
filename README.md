@@ -121,3 +121,9 @@ details.
 
 This project is an independent, unofficial modification of KDE Plasma
 Workspace. It is not an official KDE project and is not endorsed by KDE.
+
+P.S.
+Yes I understand no coding whatsoever.
+And Yes I made all of this using AI. But hey it works! I really missed that from Windows and now I got it back!
+Truth be told I have no idea how GitHub works and I hope people can contribute to this and update it if I am not around without having to
+remix it or something like that. Again I have no idea how GitHub works...
