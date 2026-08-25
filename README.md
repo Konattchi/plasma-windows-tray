@@ -79,21 +79,36 @@ On first managed installation it creates an immutable restore backup and does no
 ./scripts/verify.sh
 ```
 
-## Plasma updates
+## Plasma updates / reapply the mod
 
-A Plasma package update can replace the modified System Tray plugin. The repository includes a compatibility helper for testing the patches against another Plasma Workspace source tree:
+A Plasma package update can replace the modified System Tray plugin with KDE's stock copy. Your tray ordering is stored by Plasma separately, so reapplying the mod does not normally require arranging the icons again.
+
+For an existing managed installation, update this repository and run:
+
+```bash
+git pull
+./scripts/reapply.sh --dry-run
+./scripts/reapply.sh
+```
+
+`reapply.sh` requires the existing managed installation state and immutable restore backup. It deliberately refuses to create a new backup from the post-update plugin, so the original stock restore copy remains protected. It then uses the normal installer to rebuild against the detected Plasma version and runs `verify.sh` automatically.
+
+If the dry run reports a Plasma series other than the tested 6.7.x series, do not force the installation unless compatibility has been verified.
+
+For developers, the repository also includes a compatibility-only build helper:
 
 ```bash
 ./scripts/rebuild-after-plasma-update.sh /path/to/plasma-workspace
 ```
 
-The helper performs a compatibility build but does not automatically install the result.
+That helper performs a compatibility build but does not automatically install the result.
 
 ## Repository contents
 
 - `patches/plasma-6.7-systemtray.patch` — Windows-style tray behavior and overflow UI.
 - `patches/plasma-6.7-native-tooltips.patch` — native Plasma tooltip behavior for the popup header controls.
 - `scripts/install.sh` — checks, downloads matching Plasma source, patches, builds, backs up, installs, and restarts Plasma.
+- `scripts/reapply.sh` — safely rebuilds and reapplies an existing managed installation after Plasma updates.
 - `scripts/verify.sh` — verifies whether the installed plugin matches the managed mod or backup.
 - `scripts/restore.sh` — restores the System Tray plugin backup created by the installer.
 - `scripts/rebuild-after-plasma-update.sh` — compatibility build helper.
