@@ -5,7 +5,7 @@ A KDE Plasma System Tray modification that adds a Windows-style tray overflow wo
 ## Project status
 
 **Release:** 1.0.0  
-**Target:** KDE Plasma 6.7.x  
+**Released target:** KDE Plasma 6.7.x; **Plasma 6.8.0 port:** testing branch  
 **Tested:** KDE Plasma 6.7.4
 
 The installer has been tested end-to-end on Plasma 6.7.4: clean upstream source checkout, patching, compilation, installation, Plasma restart, and verification.
