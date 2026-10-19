@@ -28,8 +28,7 @@ Options:
   --dry-run              Check environment, version, plugin path, and patch files.
                          Does not build, install, or modify files.
   --force-version        Bypass the tested-version guard (patch must still apply).
-  --backup-from PATH     On first install, seed the immutable restore backup from PATH
-                         instead of the currently installed plugin.
+  --backup-from PATH     Required on first install: path to verified stock plugin.
   -h, --help             Show this help.
 
 The restore backup is created once and is never overwritten automatically.
@@ -186,6 +185,10 @@ if ldd "$PLUGIN" | grep -q 'not found'; then
 fi
 
 if [[ ! -f "$BACKUP" ]]; then
+    if [[ -z "$BACKUP_FROM" ]]; then
+        echo "ERROR: first managed installation requires --backup-from with a verified stock plugin." >&2
+        exit 1
+    fi
     echo "Creating immutable restore backup..."
     if [[ -n "$BACKUP_FROM" ]]; then
         if [[ "$BACKUP_FROM_NEEDS_SUDO" -eq 1 ]]; then
@@ -201,11 +204,15 @@ if [[ ! -f "$BACKUP" ]]; then
     fi
 fi
 
+if [[ -n "$BACKUP_FROM" && "$(sha256_file "$BACKUP_FROM")" != "$(sha256_file "$BACKUP")" ]]; then
+    echo "ERROR: --backup-from differs from immutable restore backup." >&2
+    exit 1
+fi
 BACKUP_SHA="$(sha256_file "$BACKUP")"
 BUILT_SHA="$(sha256_file "$PLUGIN")"
 BEFORE_SHA="$(sha256_file "$SYSTEM_PLUGIN")"
 
-sudo cp "$PLUGIN" "$SYSTEM_PLUGIN"
+sudo install -m 755 "$PLUGIN" "$SYSTEM_PLUGIN"
 AFTER_SHA="$(sha256_file "$SYSTEM_PLUGIN")"
 
 [[ "$AFTER_SHA" == "$BUILT_SHA" ]] || {
