@@ -5,10 +5,10 @@ A KDE Plasma System Tray modification that adds a Windows-style tray overflow wo
 ## Project status
 
 **Release:** 1.0.0  
-**Released target:** KDE Plasma 6.7.x; **Plasma 6.8.0 port:** testing branch  
-**Tested:** KDE Plasma 6.7.4
+**Released target:** KDE Plasma 6.7.x; **Plasma 6.8.0 port:** validated on `plasma-6.8-port` branch  
+**Tested:** KDE Plasma 6.7.4 and 6.8.0 (CachyOS)
 
-The installer has been tested end-to-end on Plasma 6.7.4: clean upstream source checkout, patching, compilation, installation, Plasma restart, and verification.
+The installer has been tested end-to-end on Plasma 6.7.4 and Plasma 6.8.0: source checkout, patching, compilation, installation, and verification. On Plasma 6.8.0, restore to the stock plugin and reinstallation were also tested successfully.
 
 This is an unofficial patch, not an upstream KDE feature. Plasma internals can change between releases, so compatibility with newer Plasma versions is not guaranteed.
 
@@ -26,7 +26,7 @@ The normal Plasma System Tray popup keeps its built-in Plasma controls at the to
 - Preserve normal clicks, activation, context menus, and applet behavior.
 - Use Plasma's native theme-aware tooltips for the popup header controls.
 
-## Quick install — Plasma 6.7.x
+## Quick install — Plasma 6.7.x / 6.8.0 testing branch
 
 Copy and paste this into a terminal:
 
@@ -34,7 +34,8 @@ Copy and paste this into a terminal:
 git clone https://github.com/Konattchi/plasma-windows-tray.git
 cd plasma-windows-tray
 ./scripts/install.sh --dry-run
-./scripts/install.sh
+# First managed installation requires a verified stock System Tray plugin backup:
+./scripts/install.sh --backup-from /path/to/verified-stock/org.kde.plasma.systemtray.so
 ./scripts/verify.sh
 ```
 
@@ -48,7 +49,7 @@ The installer will ask for `sudo` only when it needs to replace the system Syste
 
 ### Already running a manually installed copy?
 
-If this mod was previously installed manually, do **not** let the installer mistake the modified plugin for the original stock plugin. If you have a known-good stock System Tray plugin backup, seed it explicitly on the first managed installation:
+If this mod was previously installed manually, do **not** let the installer mistake the modified plugin for the original stock plugin. A verified stock System Tray plugin backup is required on the first managed installation, even if the mod is not currently installed. Use a backup from the exact installed Plasma version:
 
 ```bash
 ./scripts/install.sh --backup-from /path/to/stock/org.kde.plasma.systemtray.so
@@ -68,9 +69,9 @@ You can also run the repository release checks:
 ./scripts/check-release.sh
 ```
 
-The installer refuses automatic installation when the detected Plasma series is not 6.7.x unless `--force-version` is explicitly supplied.
+The installer selects the 6.7 patches for Plasma 6.7.x and the combined patch for exactly Plasma 6.8.0. Other versions are not supported by the current patch selector, including when `--force-version` is supplied.
 
-On first managed installation it creates an immutable restore backup and does not overwrite that backup automatically.
+On first managed installation it seeds an immutable restore backup from the explicitly supplied stock plugin and does not overwrite that backup automatically. Backups from earlier Plasma versions must be archived before starting a new managed installation.
 
 ## Restore stock Plasma tray
 
@@ -93,7 +94,7 @@ git pull
 
 `reapply.sh` requires the existing managed installation state and immutable restore backup. It deliberately refuses to create a new backup from the post-update plugin, so the original stock restore copy remains protected. It then uses the normal installer to rebuild against the detected Plasma version and runs `verify.sh` automatically.
 
-If the dry run reports a Plasma series other than the tested 6.7.x series, do not force the installation unless compatibility has been verified.
+If the dry run reports a version other than 6.7.x or exactly 6.8.0, do not attempt installation until a compatible patch is available.
 
 For developers, the repository also includes a compatibility-only build helper:
 
@@ -107,6 +108,7 @@ That helper performs a compatibility build but does not automatically install th
 
 - `patches/plasma-6.7-systemtray.patch` — Windows-style tray behavior and overflow UI.
 - `patches/plasma-6.7-native-tooltips.patch` — native Plasma tooltip behavior for the popup header controls.
+- `patches/plasma-6.8-systemtray.patch` — combined System Tray and native tooltip changes for Plasma 6.8.0.
 - `scripts/install.sh` — checks, downloads matching Plasma source, patches, builds, backs up, installs, and restarts Plasma.
 - `scripts/reapply.sh` — safely rebuilds and reapplies an existing managed installation after Plasma updates.
 - `scripts/verify.sh` — verifies whether the installed plugin matches the managed mod or backup.
