@@ -8,6 +8,9 @@ TOOLTIP_PATCH="$PROJECT_ROOT/patches/plasma-6.7-native-tooltips.patch"
 EXPECTED_MAIN_PATCH_SHA="b1afd650673b358e7f4e2b7b6981e3810b21468f67f17e0bdc21877aa7ab6efc"
 EXPECTED_TOOLTIP_PATCH_SHA="b3b0768e82cd523450df92b3bbf9eb19c4cf91559ee596e12bab6f6dbb1cea3f"
 
+PLASMA68_PATCH="$PROJECT_ROOT/patches/plasma-6.8-systemtray.patch"
+EXPECTED_PLASMA68_SHA="fe1d154670543c2ab7c6993712cba4403c0c3ade7252a7a73e603650c4566a31"
+
 echo "== Release checks =="
 
 check_hash() {
@@ -34,6 +37,7 @@ check_hash() {
 
 check_hash "System tray patch" "$MAIN_PATCH" "$EXPECTED_MAIN_PATCH_SHA"
 check_hash "Native tooltip patch" "$TOOLTIP_PATCH" "$EXPECTED_TOOLTIP_PATCH_SHA"
+check_hash "Combined Plasma 6.8 patch" "$PLASMA68_PATCH" "$EXPECTED_PLASMA68_SHA"
 
 for script in "$PROJECT_ROOT"/scripts/*.sh; do
     bash -n "$script"

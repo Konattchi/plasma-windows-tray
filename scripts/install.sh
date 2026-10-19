@@ -5,9 +5,7 @@ set -euo pipefail
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$PROJECT_ROOT/scripts/common.sh"
 
-TESTED_SERIES="6.7"
-PATCH="$PROJECT_ROOT/patches/plasma-6.7-systemtray.patch"
-TOOLTIP_PATCH="$PROJECT_ROOT/patches/plasma-6.7-native-tooltips.patch"
+TESTED_SERIES="6.7, 6.8.0"
 REPO_URL="https://invent.kde.org/plasma/plasma-workspace.git"
 
 WORK_ROOT="${XDG_CACHE_HOME:-$HOME/.cache}/plasma-windows-tray"
@@ -29,9 +27,8 @@ Usage: install.sh [options]
 Options:
   --dry-run              Check environment, version, plugin path, and patch files.
                          Does not build, install, or modify files.
-  --force-version        Allow installation when installed Plasma is not 6.7.x.
-  --backup-from PATH     On first install, seed the immutable restore backup from PATH
-                         instead of the currently installed plugin.
+  --force-version        Bypass the tested-version guard (patch must still apply).
+  --backup-from PATH     Required on first install: path to verified stock plugin.
   -h, --help             Show this help.
 
 The restore backup is created once and is never overwritten automatically.
@@ -70,8 +67,6 @@ for tool in git cmake ninja sha256sum ldd realpath; do
     require_tool "$tool"
 done
 
-[[ -f "$PATCH" ]] || { echo "ERROR: missing patch: $PATCH"; exit 1; }
-[[ -f "$TOOLTIP_PATCH" ]] || { echo "ERROR: missing tooltip patch: $TOOLTIP_PATCH"; exit 1; }
 
 SYSTEM_PLUGIN="$(find_systemtray_plugin)" || {
     echo "ERROR: could not locate org.kde.plasma.systemtray.so"
@@ -81,20 +76,42 @@ SYSTEM_PLUGIN="$(find_systemtray_plugin)" || {
 PLASMA_VERSION="$(installed_plasma_version || true)"
 SERIES="$(plasma_series "$PLASMA_VERSION" || true)"
 SOURCE_TAG="v${PLASMA_VERSION}"
+case "$PLASMA_VERSION" in
+    6.7.*)
+        PATCH="$PROJECT_ROOT/patches/plasma-6.7-systemtray.patch"
+        TOOLTIP_PATCH="$PROJECT_ROOT/patches/plasma-6.7-native-tooltips.patch"
+        ;;
+    6.8.0)
+        PATCH="$PROJECT_ROOT/patches/plasma-6.8-systemtray.patch"
+        TOOLTIP_PATCH="" # Already included in the combined 6.8 patch.
+        ;;
+    *)
+        echo "ERROR: unsupported Plasma version $PLASMA_VERSION; no matching tested patch."
+        exit 1
+        ;;
+esac
+[[ -f "$PATCH" ]] || { echo "ERROR: missing patch: $PATCH"; exit 1; }
+if [[ -n "$TOOLTIP_PATCH" ]]; then
+    [[ -f "$TOOLTIP_PATCH" ]] || { echo "ERROR: missing tooltip patch: $TOOLTIP_PATCH"; exit 1; }
+fi
 
 echo "Detected System Tray plugin: $SYSTEM_PLUGIN"
 echo "Installed Plasma version: ${PLASMA_VERSION:-unknown}"
 echo "Tested Plasma series: $TESTED_SERIES"
 echo "Plasma source tag: $SOURCE_TAG"
 echo "System tray patch SHA-256: $(sha256_file "$PATCH")"
-echo "Native tooltip patch SHA-256: $(sha256_file "$TOOLTIP_PATCH")"
+if [[ -n "$TOOLTIP_PATCH" ]]; then
+    echo "Native tooltip patch SHA-256: $(sha256_file "$TOOLTIP_PATCH")"
+else
+    echo "Native tooltip patch: included in combined 6.8 patch"
+fi
 
 if [[ -z "$PLASMA_VERSION" ]]; then
     echo "ERROR: could not determine installed Plasma version."
     exit 1
 fi
 
-if [[ "$SERIES" != "$TESTED_SERIES" && "$FORCE_VERSION" -ne 1 ]]; then
+if [[ "$SERIES" != "6.7" && "$PLASMA_VERSION" != "6.8.0" && "$FORCE_VERSION" -ne 1 ]]; then
     echo "ERROR: installed Plasma series is '${SERIES:-unknown}', not '$TESTED_SERIES'."
     echo "Use --force-version only after verifying compatibility."
     exit 1
@@ -141,9 +158,11 @@ echo "Checking and applying main System Tray patch..."
 git -C "$SRC" apply --check "$PATCH"
 git -C "$SRC" apply "$PATCH"
 
-echo "Checking and applying native tooltip patch..."
-git -C "$SRC" apply --check "$TOOLTIP_PATCH"
-git -C "$SRC" apply "$TOOLTIP_PATCH"
+if [[ -n "$TOOLTIP_PATCH" ]]; then
+    echo "Checking and applying native tooltip patch..."
+    git -C "$SRC" apply --check "$TOOLTIP_PATCH"
+    git -C "$SRC" apply "$TOOLTIP_PATCH"
+fi
 
 echo "Configuring build..."
 cmake -S "$SRC" -B "$BUILD" -G Ninja \
@@ -166,6 +185,10 @@ if ldd "$PLUGIN" | grep -q 'not found'; then
 fi
 
 if [[ ! -f "$BACKUP" ]]; then
+    if [[ -z "$BACKUP_FROM" ]]; then
+        echo "ERROR: first managed installation requires --backup-from with a verified stock plugin." >&2
+        exit 1
+    fi
     echo "Creating immutable restore backup..."
     if [[ -n "$BACKUP_FROM" ]]; then
         if [[ "$BACKUP_FROM_NEEDS_SUDO" -eq 1 ]]; then
@@ -181,11 +204,15 @@ if [[ ! -f "$BACKUP" ]]; then
     fi
 fi
 
+if [[ -n "$BACKUP_FROM" && "$(sha256_file "$BACKUP_FROM")" != "$(sha256_file "$BACKUP")" ]]; then
+    echo "ERROR: --backup-from differs from immutable restore backup." >&2
+    exit 1
+fi
 BACKUP_SHA="$(sha256_file "$BACKUP")"
 BUILT_SHA="$(sha256_file "$PLUGIN")"
 BEFORE_SHA="$(sha256_file "$SYSTEM_PLUGIN")"
 
-sudo cp "$PLUGIN" "$SYSTEM_PLUGIN"
+sudo install -m 755 "$PLUGIN" "$SYSTEM_PLUGIN"
 AFTER_SHA="$(sha256_file "$SYSTEM_PLUGIN")"
 
 [[ "$AFTER_SHA" == "$BUILT_SHA" ]] || {
@@ -198,7 +225,7 @@ SYSTEM_PLUGIN='$SYSTEM_PLUGIN'
 BACKUP='$BACKUP'
 BACKUP_SHA='$BACKUP_SHA'
 SYSTEMTRAY_PATCH_SHA='$(sha256_file "$PATCH")'
-TOOLTIP_PATCH_SHA='$(sha256_file "$TOOLTIP_PATCH")'
+TOOLTIP_PATCH_SHA='$(if [[ -n "$TOOLTIP_PATCH" ]]; then sha256_file "$TOOLTIP_PATCH"; else printf included; fi)'
 SOURCE_TAG='$SOURCE_TAG'
 PLASMA_VERSION='$PLASMA_VERSION'
 BEFORE_INSTALL_SHA='$BEFORE_SHA'

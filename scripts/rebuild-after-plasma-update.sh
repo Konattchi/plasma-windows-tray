@@ -11,8 +11,21 @@ if [[ $# -ne 1 ]]; then
 fi
 
 SRC="$(realpath "$1")"
-PATCH="$PROJECT_ROOT/patches/plasma-6.7-systemtray.patch"
-TOOLTIP_PATCH="$PROJECT_ROOT/patches/plasma-6.7-native-tooltips.patch"
+SOURCE_TAG="$(git -C "$SRC" describe --tags --exact-match 2>/dev/null || true)"
+case "$SOURCE_TAG" in
+    v6.7.*)
+        PATCH="$PROJECT_ROOT/patches/plasma-6.7-systemtray.patch"
+        TOOLTIP_PATCH="$PROJECT_ROOT/patches/plasma-6.7-native-tooltips.patch"
+        ;;
+    v6.8.0)
+        PATCH="$PROJECT_ROOT/patches/plasma-6.8-systemtray.patch"
+        TOOLTIP_PATCH=""
+        ;;
+    *)
+        echo "ERROR: unsupported source tag: ${SOURCE_TAG:-none}; use a pristine supported tag."
+        exit 1
+        ;;
+esac
 BUILD="${XDG_CACHE_HOME:-$HOME/.cache}/plasma-windows-tray/update-build"
 
 [[ -d "$SRC/.git" ]] || {
@@ -21,7 +34,9 @@ BUILD="${XDG_CACHE_HOME:-$HOME/.cache}/plasma-windows-tray/update-build"
 }
 
 [[ -f "$PATCH" ]] || { echo "ERROR: missing patch: $PATCH"; exit 1; }
-[[ -f "$TOOLTIP_PATCH" ]] || { echo "ERROR: missing patch: $TOOLTIP_PATCH"; exit 1; }
+if [[ -n "$TOOLTIP_PATCH" ]]; then
+    [[ -f "$TOOLTIP_PATCH" ]] || { echo "ERROR: missing patch: $TOOLTIP_PATCH"; exit 1; }
+fi
 
 for tool in git cmake ninja ldd; do
     require_tool "$tool"
@@ -36,8 +51,10 @@ TMP="${XDG_CACHE_HOME:-$HOME/.cache}/plasma-windows-tray/update-source"
 rm -rf "$TMP" "$BUILD"
 git clone --no-local "$SRC" "$TMP"
 git -C "$TMP" apply "$PATCH"
-git -C "$TMP" apply --check "$TOOLTIP_PATCH"
-git -C "$TMP" apply "$TOOLTIP_PATCH"
+if [[ -n "$TOOLTIP_PATCH" ]]; then
+    git -C "$TMP" apply --check "$TOOLTIP_PATCH"
+    git -C "$TMP" apply "$TOOLTIP_PATCH"
+fi
 
 cmake -S "$TMP" -B "$BUILD" -G Ninja \
     -DCMAKE_BUILD_TYPE=RelWithDebInfo \
@@ -58,5 +75,5 @@ if ldd "$PLUGIN" | grep -q 'not found'; then
 fi
 
 echo
-echo "Compatibility build succeeded with both patches."
+echo "Compatibility build succeeded with selected patch(es)."
 echo "No system files were installed."
