@@ -129,6 +129,18 @@ if [[ -n "$BACKUP_FROM" ]]; then
     fi
 fi
 
+if [[ -f "$STATE_FILE" ]]; then
+    recorded_tag="$(sed -n "s/^SOURCE_TAG='\\([^']*\\)'$/\\1/p" "$STATE_FILE")"
+    if [[ -z "$recorded_tag" || "$recorded_tag" != "$SOURCE_TAG" ]]; then
+        echo "ERROR: managed restore backup belongs to ${recorded_tag:-unknown}, current package is $SOURCE_TAG." >&2
+        echo "Preserve/archive previous managed state, then use a verified stock plugin from $SOURCE_TAG for a new managed installation." >&2
+        exit 1
+    fi
+elif [[ -f "$BACKUP" ]]; then
+    echo "ERROR: managed backup exists without recorded source-version state; refusing to reuse it." >&2
+    exit 1
+fi
+
 if [[ "$DRY_RUN" -eq 1 ]]; then
     echo "DRY RUN COMPLETE. No source checkout, build, backup, install, or Plasma restart was performed."
     exit 0
