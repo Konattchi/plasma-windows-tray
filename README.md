@@ -5,7 +5,7 @@ A KDE Plasma System Tray modification that adds a Windows-style tray overflow wo
 ## Project status
 
 **Release:** 1.0.0  
-**Released target:** KDE Plasma 6.7.x; **Plasma 6.8.0 port:** validated on `plasma-6.8-port` branch  
+**Supported patch selection:** KDE Plasma 6.7.x and 6.8.x; **runtime-tested:** Plasma 6.7.4 and 6.8.0  
 **Tested:** KDE Plasma 6.7.4 and 6.8.0 (CachyOS)
 
 The installer has been tested end-to-end on Plasma 6.7.4 and Plasma 6.8.0: source checkout, patching, compilation, installation, and verification. On Plasma 6.8.0, restore to the stock plugin and reinstallation were also tested successfully.
@@ -26,7 +26,7 @@ The normal Plasma System Tray popup keeps its built-in Plasma controls at the to
 - Preserve normal clicks, activation, context menus, and applet behavior.
 - Use Plasma's native theme-aware tooltips for the popup header controls.
 
-## Quick install — Plasma 6.7.x / 6.8.0 testing branch
+## Quick install — Plasma 6.7.x / 6.8.x
 
 Copy and paste this into a terminal:
 
@@ -69,7 +69,7 @@ You can also run the repository release checks:
 ./scripts/check-release.sh
 ```
 
-The installer selects the 6.7 patches for Plasma 6.7.x and the combined patch for exactly Plasma 6.8.0. Other versions are not supported by the current patch selector, including when `--force-version` is supplied.
+The installer selects the 6.7 patches for Plasma 6.7.x and attempts the combined 6.8 patch on 6.8.x. Only 6.8.0 has been runtime-tested; later 6.8 releases may change upstream source, so failed patch application stops before installation. A minor-version upgrade also requires a new version-matched stock backup and fresh managed state: never reuse an older version's restore backup. Other versions are not supported by the current patch selector, including when `--force-version` is supplied.
 
 On first managed installation it seeds an immutable restore backup from the explicitly supplied stock plugin and does not overwrite that backup automatically. Backups from earlier Plasma versions must be archived before starting a new managed installation.
 
