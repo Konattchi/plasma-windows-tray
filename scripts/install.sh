@@ -5,7 +5,7 @@ set -euo pipefail
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$PROJECT_ROOT/scripts/common.sh"
 
-TESTED_SERIES="6.7, 6.8.0"
+TESTED_SERIES="6.7.x, 6.8.x (runtime-tested on 6.8.0)"
 REPO_URL="https://invent.kde.org/plasma/plasma-workspace.git"
 
 WORK_ROOT="${XDG_CACHE_HOME:-$HOME/.cache}/plasma-windows-tray"
@@ -81,7 +81,7 @@ case "$PLASMA_VERSION" in
         PATCH="$PROJECT_ROOT/patches/plasma-6.7-systemtray.patch"
         TOOLTIP_PATCH="$PROJECT_ROOT/patches/plasma-6.7-native-tooltips.patch"
         ;;
-    6.8.0)
+    6.8.*)
         PATCH="$PROJECT_ROOT/patches/plasma-6.8-systemtray.patch"
         TOOLTIP_PATCH="" # Already included in the combined 6.8 patch.
         ;;
@@ -111,7 +111,7 @@ if [[ -z "$PLASMA_VERSION" ]]; then
     exit 1
 fi
 
-if [[ "$SERIES" != "6.7" && "$PLASMA_VERSION" != "6.8.0" && "$FORCE_VERSION" -ne 1 ]]; then
+if [[ "$SERIES" != "6.7" && "$SERIES" != "6.8" && "$FORCE_VERSION" -ne 1 ]]; then
     echo "ERROR: installed Plasma series is '${SERIES:-unknown}', not '$TESTED_SERIES'."
     echo "Use --force-version only after verifying compatibility."
     exit 1
